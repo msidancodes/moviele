@@ -18,16 +18,78 @@
       }
     </style>
     <script>
-      // Ignore Vite HMR WebSocket errors in AI Studio iframe environment
-      window.addEventListener('unhandledrejection', function (event) {
-        if (
-          event.reason &&
-          (event.reason.message?.includes('WebSocket') ||
-            String(event.reason).includes('WebSocket'))
-        ) {
-          event.preventDefault();
+      (function () {
+        // Prevent Vite HMR WebSocket connection failure in AI Studio preview iframe
+        if (typeof window !== 'undefined' && window.WebSocket) {
+          const OriginalWebSocket = window.WebSocket;
+          window.WebSocket = function (url, protocols) {
+            if (
+              protocols === 'vite-hmr' ||
+              (Array.isArray(protocols) && protocols.includes('vite-hmr')) ||
+              (typeof url === 'string' && (url.includes('token=') || url.includes('/@vite/client')))
+            ) {
+              const listeners = new Map();
+              return {
+                OPEN: 1,
+                CLOSED: 3,
+                CLOSING: 2,
+                CONNECTING: 0,
+                readyState: 1,
+                url,
+                protocol: 'vite-hmr',
+                extensions: '',
+                bufferedAmount: 0,
+                binaryType: 'blob',
+                addEventListener(type, listener) {
+                  if (!listeners.has(type)) listeners.set(type, new Set());
+                  listeners.get(type).add(listener);
+                  if (type === 'open') {
+                    setTimeout(() => {
+                      try { listener(new Event('open')); } catch (_) {}
+                    }, 0);
+                  }
+                },
+                removeEventListener(type, listener) {
+                  if (listeners.has(type)) listeners.get(type).delete(listener);
+                },
+                dispatchEvent(event) {
+                  const set = listeners.get(event.type);
+                  if (set) {
+                    set.forEach((cb) => {
+                      try { cb(event); } catch (_) {}
+                    });
+                  }
+                  return true;
+                },
+                send() {},
+                close() {
+                  this.readyState = 3;
+                },
+                set onopen(cb) { this.addEventListener('open', cb); },
+                set onclose(cb) { this.addEventListener('close', cb); },
+                set onerror(cb) { this.addEventListener('error', cb); },
+                set onmessage(cb) { this.addEventListener('message', cb); },
+              };
+            }
+            return new OriginalWebSocket(url, protocols);
+          };
+          window.WebSocket.prototype = OriginalWebSocket.prototype;
+          window.WebSocket.CONNECTING = OriginalWebSocket.CONNECTING;
+          window.WebSocket.OPEN = OriginalWebSocket.OPEN;
+          window.WebSocket.CLOSING = OriginalWebSocket.CLOSING;
+          window.WebSocket.CLOSED = OriginalWebSocket.CLOSED;
         }
-      });
+
+        window.addEventListener('unhandledrejection', function (event) {
+          if (
+            event.reason &&
+            (event.reason.message?.includes('WebSocket') ||
+              String(event.reason).includes('WebSocket'))
+          ) {
+            event.preventDefault();
+          }
+        });
+      })();
     </script>
   </head>
   <body>
